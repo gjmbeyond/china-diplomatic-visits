@@ -9,6 +9,54 @@ let worldData = null;
 let currentData = JSON.parse(JSON.stringify(VISIT_DATA));
 let selectedCountry = null;
 
+// ISO Alpha-3 到数字代码的映射 (用于匹配 TopoJSON)
+const ALPHA3_TO_NUMERIC = {
+    "AFG": "004", "ALB": "008", "DZA": "012", "AND": "020", "AGO": "024",
+    "ARG": "032", "ARM": "051", "AUS": "036", "AUT": "040", "AZE": "031",
+    "BHS": "044", "BHR": "048", "BGD": "050", "BRB": "052", "BLR": "112",
+    "BEL": "056", "BLZ": "084", "BEN": "204", "BTN": "064", "BOL": "068",
+    "BIH": "070", "BWA": "072", "BRA": "076", "BRN": "096", "BGR": "100",
+    "BFA": "854", "BDI": "108", "CPV": "132", "KHM": "116", "CMR": "120",
+    "CAN": "124", "CAF": "140", "TCD": "148", "CHL": "152", "CHN": "156",
+    "COL": "170", "COM": "174", "COG": "178", "COD": "180", "CRI": "188",
+    "HRV": "191", "CUB": "192", "CYP": "196", "CZE": "203", "DNK": "208",
+    "DJI": "262", "DOM": "214", "ECU": "218", "EGY": "818", "SLV": "222",
+    "GNQ": "226", "ERI": "232", "EST": "233", "SWZ": "748", "ETH": "231",
+    "FJI": "242", "FIN": "246", "FRA": "250", "GAB": "266", "GMB": "270",
+    "GEO": "268", "DEU": "276", "GHA": "288", "GRC": "300", "GTM": "320",
+    "GIN": "324", "GNB": "624", "GUY": "328", "HTI": "332", "HND": "340",
+    "HUN": "348", "ISL": "352", "IND": "356", "IDN": "360", "IRN": "364",
+    "IRQ": "368", "IRL": "372", "ISR": "376", "ITA": "380", "JAM": "388",
+    "JPN": "392", "JOR": "400", "KAZ": "398", "KEN": "404", "PRK": "408",
+    "KOR": "410", "KWT": "414", "KGZ": "417", "LAO": "418", "LVA": "428",
+    "LBN": "422", "LSO": "426", "LBR": "430", "LBY": "434", "LIE": "438",
+    "LTU": "440", "LUX": "442", "MDG": "450", "MWI": "454", "MYS": "458",
+    "MDV": "462", "MLI": "466", "MLT": "470", "MHL": "584", "MRT": "478",
+    "MUS": "480", "MEX": "484", "FSM": "583", "MDA": "498", "MCO": "492",
+    "MNG": "496", "MNE": "499", "MAR": "504", "MOZ": "508", "MMR": "104",
+    "NAM": "516", "NRU": "520", "NPL": "524", "NZL": "554", "NIC": "558",
+    "NER": "562", "NGA": "566", "MKD": "807", "NOR": "578", "OMN": "512",
+    "PAK": "586", "PLW": "585", "PAN": "591", "PNG": "598", "PRY": "600",
+    "PER": "604", "PHL": "608", "POL": "616", "PRT": "620", "QAT": "634",
+    "ROU": "642", "RUS": "643", "RWA": "646", "KNA": "659", "LCA": "662",
+    "VCT": "670", "WSM": "882", "SMR": "674", "STP": "678", "SAU": "682",
+    "SEN": "686", "SRB": "688", "SYC": "690", "SLE": "694", "SGP": "702",
+    "SVK": "703", "SVN": "705", "SLB": "090", "SOM": "706", "ZAF": "710",
+    "SSD": "728", "ESP": "724", "LKA": "144", "SDN": "729", "SUR": "740",
+    "SWE": "752", "CHE": "756", "SYR": "760", "TWN": "158", "TJK": "762",
+    "TZA": "834", "THA": "764", "TLS": "626", "TGO": "768", "TON": "776",
+    "TTO": "780", "TUN": "788", "TUR": "792", "TKM": "795", "TUV": "798",
+    "UGA": "800", "UKR": "804", "ARE": "784", "GBR": "826", "USA": "840",
+    "URY": "858", "UZB": "860", "VUT": "548", "VEN": "862", "VNM": "704",
+    "YEM": "887", "ZMB": "894", "ZWE": "716", "TWN": "158", "PSE": "275",
+    "SRB": "688", "MNE": "499", "KOS": "383", "SWZ": "748"
+};
+
+// 根据国家代码获取地图ID
+function getMapId(countryCode) {
+    return ALPHA3_TO_NUMERIC[countryCode] || null;
+}
+
 // 颜色比例尺 - 基于访问次数
 const colorScale = d3.scaleThreshold()
     .domain([1, 2, 3, 5])
@@ -94,7 +142,17 @@ function initMap() {
 
 // 获取国家颜色
 function getCountryColor(countryId) {
-    const countryData = currentData[countryId];
+    // countryId 是 TopoJSON 的数字 ID (字符串形式)
+    // 查找对应的 Alpha-3 代码
+    let alpha3Code = null;
+    for (const [code, numId] of Object.entries(ALPHA3_TO_NUMERIC)) {
+        if (numId === countryId) {
+            alpha3Code = code;
+            break;
+        }
+    }
+    
+    const countryData = alpha3Code ? currentData[alpha3Code] : null;
     if (!countryData || !countryData.leaders || countryData.leaders.length === 0) {
         return '#1a2744'; // 无数据
     }
@@ -103,7 +161,16 @@ function getCountryColor(countryId) {
 
 // 鼠标悬停处理
 function handleMouseOver(event, d) {
-    const countryData = currentData[d.id];
+    // 查找对应的 Alpha-3 代码
+    let alpha3Code = null;
+    for (const [code, numId] of Object.entries(ALPHA3_TO_NUMERIC)) {
+        if (numId === d.id) {
+            alpha3Code = code;
+            break;
+        }
+    }
+    
+    const countryData = alpha3Code ? currentData[alpha3Code] : null;
     if (!countryData || !countryData.leaders || countryData.leaders.length === 0) {
         return;
     }
@@ -175,7 +242,16 @@ function handleMouseOut(event) {
 
 // 点击处理
 function handleClick(event, d) {
-    const countryData = currentData[d.id];
+    // 查找对应的 Alpha-3 代码
+    let alpha3Code = null;
+    for (const [code, numId] of Object.entries(ALPHA3_TO_NUMERIC)) {
+        if (numId === d.id) {
+            alpha3Code = code;
+            break;
+        }
+    }
+    
+    const countryData = alpha3Code ? currentData[alpha3Code] : null;
     if (countryData && countryData.leaders && countryData.leaders.length > 0) {
         // 可以在这里添加点击后的详细视图
         console.log('点击国家:', countryData.name);
